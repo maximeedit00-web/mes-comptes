@@ -127,6 +127,8 @@ button:focus-visible, .check input:focus-visible { outline: 2px solid var(--acce
 .status { font-size: .82rem; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); display: inline-block; }
 .status .dot.ok { background: var(--pos); }
+.offsite { background: color-mix(in srgb, var(--neg) 14%, var(--surface)); color: var(--fg); border: 1px solid var(--neg); border-radius: 10px; padding: 12px 14px; font-size: .9rem; overflow-wrap: anywhere; }
+.offsite a { color: var(--neg); font-weight: 600; }
 .sync { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: .88rem; color: var(--muted); }
 .sync-btn { border: 0; background: var(--accent); color: var(--bg); border-radius: 10px; padding: 10px 16px; font-weight: 600; }
 .sync-btn:hover { filter: brightness(1.08); }
@@ -542,6 +544,16 @@ button:focus-visible, .check input:focus-visible { outline: 2px solid var(--acce
       backupMsg("Ce fichier n'est pas une sauvegarde de Mes comptes.");
     }
   });
+
+  // ---------- Opened outside the real site (local file, preview…): warn ----------
+  const SITE = "https://maximeedit00-web.github.io/mes-comptes/";
+  if (location.href.indexOf(SITE) !== 0) {
+    const w = document.createElement("div");
+    w.className = "offsite";
+    w.innerHTML = 'Tu n\'es pas sur le vrai site : rien ne sera gardé ni synchronisé ici. ' +
+      'Ouvre <a href="' + SITE + '" target="_blank" rel="noopener">' + SITE + '</a> dans Chrome ou Edge.';
+    document.querySelector(".wrap").prepend(w);
+  }
 
   // ---------- Boot: data stays on this device ----------
   let storageOk = true;
