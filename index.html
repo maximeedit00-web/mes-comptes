@@ -127,6 +127,11 @@ button:focus-visible, .check input:focus-visible { outline: 2px solid var(--acce
 .status { font-size: .82rem; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); display: inline-block; }
 .status .dot.ok { background: var(--pos); }
+.sync { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; font-size: .88rem; color: var(--muted); }
+.sync-btn { border: 0; background: var(--accent); color: var(--bg); border-radius: 10px; padding: 10px 16px; font-weight: 600; }
+.sync-btn:hover { filter: brightness(1.08); }
+.sync-out { border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 9px; padding: 6px 12px; font-size: .85rem; }
+@media (max-width: 640px) { .sync-btn { width: 100%; } }
 .example { border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 9px; padding: 8px 14px; }
 .example:hover { border-color: var(--accent); }
 .mlabel { display: none; }
@@ -181,6 +186,11 @@ button:focus-visible, .check input:focus-visible { outline: 2px solid var(--acce
     </div>
     <div class="breakdown" id="breakdown"></div>
     <div class="status" id="status"><span class="dot"></span><span id="statusText">Chargement…</span></div>
+    <div class="sync" id="syncBar" hidden>
+      <button type="button" class="sync-btn" id="signInBtn">Se connecter avec Google pour synchroniser PC et téléphone</button>
+      <span id="syncWho" hidden></span>
+      <button type="button" class="sync-out" id="signOutBtn" hidden>Se déconnecter</button>
+    </div>
   </header>
 
   <section class="ledger" id="sec-in">
@@ -206,7 +216,7 @@ button:focus-visible, .check input:focus-visible { outline: 2px solid var(--acce
   </div>
 
   <footer class="backup">
-    <span>Tes données restent sur cet appareil.</span>
+    <span id="footNote">Tes données restent sur cet appareil.</span>
     <button id="exportBtn" type="button">Sauvegarder (fichier)</button>
     <label class="btn" for="importFile">Restaurer une sauvegarde</label>
     <input type="file" id="importFile" accept="application/json,.json">
@@ -243,13 +253,14 @@ button:focus-visible, .check input:focus-visible { outline: 2px solid var(--acce
       localStorage.setItem(LS_KEY, JSON.stringify({ entries: Object.fromEntries(entries), settings }));
     } catch {}
   }
+  const localBackend = { write: async () => lsSave(), remove: async () => lsSave(), writeSettings: async () => lsSave(), local: true };
   function useLocal(reason) {
     const saved = lsLoad();
     if (saved) {
       Object.entries(saved.entries || {}).forEach(([id, d]) => entries.set(id, d));
       settings = saved.settings || { start: 0 };
     }
-    backend = { write: lsSave, remove: lsSave, writeSettings: lsSave, local: true };
+    backend = localBackend;
     loaded = true;
     setStatus(false, reason);
     renderAll();
@@ -525,6 +536,7 @@ button:focus-visible, .check input:focus-visible { outline: 2px solid var(--acce
       Object.entries(saved.entries).forEach(([id, d]) => { if (d && d.kind) entries.set(id, d); });
       settings = saved.settings || { start: 0 };
       lsSave(); renderAll();
+      if (!backend.local && backend.replaceAll) await backend.replaceAll();
       backupMsg("Sauvegarde restaurée : " + entries.size + " lignes.");
     } catch {
       backupMsg("Ce fichier n'est pas une sauvegarde de Mes comptes.");
@@ -542,6 +554,140 @@ button:focus-visible, .check input:focus-visible { outline: 2px solid var(--acce
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   }
+
+  // ---------- Cloud sync: Firebase (Google sign-in + Firestore) ----------
+  // Public web config (not a secret: access is enforced by firestore.rules).
+  const FIREBASE_CONFIG = {
+    apiKey: "AIzaSyA6hUGzFq4Y51oEOU5yVY4l_dBh4LqE-hQ",
+    authDomain: "mes-comptes-a6872.firebaseapp.com",
+    projectId: "mes-comptes-a6872",
+    storageBucket: "mes-comptes-a6872.firebasestorage.app",
+    messagingSenderId: "635913848212",
+    appId: "1:635913848212:web:977770f65b5dc48e873b81",
+  };
+  const FB = "https://www.gstatic.com/firebasejs/11.0.2/";
+  if (!FIREBASE_CONFIG) return;
+
+  $("syncBar").hidden = false;
+  let fb = null, unsub = null;
+
+  async function loadFirebase() {
+    if (fb) return fb;
+    const [appM, authM, fsM] = await Promise.all([
+      import(FB + "firebase-app.js"), import(FB + "firebase-auth.js"), import(FB + "firebase-firestore.js"),
+    ]);
+    const app = appM.initializeApp(FIREBASE_CONFIG);
+    const auth = authM.getAuth(app);
+    let db;
+    try {
+      db = fsM.initializeFirestore(app, { localCache: fsM.persistentLocalCache({ tabManager: fsM.persistentMultipleTabManager() }) });
+    } catch { db = fsM.getFirestore(app); }
+    fb = { authM, fsM, auth, db };
+    return fb;
+  }
+
+  function showSignedIn(user) {
+    $("signInBtn").hidden = !!user;
+    $("signOutBtn").hidden = !user;
+    $("syncWho").hidden = !user;
+    $("syncWho").textContent = user ? "Synchronisé avec " + (user.email || "ton compte Google") : "";
+    $("footNote").textContent = user
+      ? "Tes données sont synchronisées entre tes appareils connectés au même compte Google."
+      : "Tes données restent sur cet appareil.";
+  }
+
+  function startCloud(user) {
+    const { fsM, db } = fb;
+    const col = fsM.collection(db, "users", user.uid, "entries");
+    const ref = id => fsM.doc(col, id);
+    const cloud = {
+      write: async (id, data) => { lsSave(); await fsM.setDoc(ref(id), data); },
+      remove: async id => { lsSave(); await fsM.deleteDoc(ref(id)); },
+      writeSettings: async data => { lsSave(); await fsM.setDoc(ref("_settings"), data); },
+      replaceAll: async () => {
+        const snap = await fsM.getDocs(col);
+        const batch = fsM.writeBatch(db);
+        snap.forEach(d => { if (d.id !== "_settings" && !entries.has(d.id)) batch.delete(d.ref); });
+        entries.forEach((e, id) => batch.set(ref(id), e));
+        batch.set(ref("_settings"), { ...settings, kind: "settings" });
+        await batch.commit();
+      },
+    };
+    let first = true;
+    setStatus(false, "Synchronisation…");
+    unsub = fsM.onSnapshot(col, { includeMetadataChanges: true }, async snap => {
+      if (first) {
+        if (snap.metadata.fromCache) return; // wait for the server's answer before deciding anything
+        first = false;
+        if (snap.empty && entries.size) {
+          // First sign-in on this account: send what this device already has.
+          backend = cloud;
+          try { await cloud.replaceAll(); } catch (e) { handleWriteError(e); }
+          setStatus(true, "Synchronisé. Tes lignes de cet appareil sont maintenant en ligne.");
+          return;
+        }
+        entries.clear();
+        backend = cloud;
+      }
+      for (const ch of snap.docChanges()) {
+        const id = ch.doc.id;
+        if (id === "_settings") {
+          if (ch.type !== "removed") settings = { start: ch.doc.data().start || 0 };
+          continue;
+        }
+        if (ch.type === "removed") { entries.delete(id); continue; }
+        if (pending[id] && entries.has(id)) continue; // keep edits still being typed
+        entries.set(id, { ...ch.doc.data() });
+      }
+      lsSave();
+      renderAll();
+      setStatus(true, snap.metadata.hasPendingWrites
+        ? "Enregistré, envoi en cours…"
+        : snap.metadata.fromCache ? "Hors ligne : les modifs partiront dès que le réseau revient." : "Synchronisé.");
+    }, err => {
+      setStatus(false, "Synchro impossible pour le moment (" + (err.code || "erreur") + "). Tes modifs restent sur cet appareil.");
+      backend = localBackend;
+    });
+  }
+
+  function stopCloud() {
+    if (unsub) { unsub(); unsub = null; }
+    backend = localBackend;
+  }
+
+  $("signInBtn").addEventListener("click", async () => {
+    try {
+      const { authM, auth } = await loadFirebase();
+      const provider = new authM.GoogleAuthProvider();
+      try { await authM.signInWithPopup(auth, provider); }
+      catch (e) {
+        if (e && (e.code === "auth/popup-blocked" || e.code === "auth/operation-not-supported-in-this-environment")) {
+          await authM.signInWithRedirect(auth, provider);
+        } else throw e;
+      }
+    } catch (e) {
+      if (e && e.code === "auth/popup-closed-by-user") return;
+      setStatus(false, "Connexion impossible (" + ((e && e.code) || "erreur réseau") + ").");
+    }
+  });
+  $("signOutBtn").addEventListener("click", async () => {
+    if (!fb) return;
+    stopCloud();
+    await fb.authM.signOut(fb.auth);
+    setStatus(true, "Déconnecté. Enregistré seulement sur cet appareil.");
+  });
+
+  // Restore an existing session without blocking first paint.
+  loadFirebase().then(({ authM, auth }) => {
+    authM.getRedirectResult(auth).catch(() => {});
+    authM.onAuthStateChanged(auth, user => {
+      showSignedIn(user);
+      if (user) { if (!unsub) startCloud(user); }
+      else stopCloud();
+    });
+  }).catch(() => {
+    $("syncBar").hidden = true; // offline and Firebase not cached: local mode only
+  });
 })();
 </script>
 </body>

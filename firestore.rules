@@ -1,0 +1,17 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Each signed-in person reads and writes only their own entries.
+    match /users/{uid}/entries/{entryId} {
+      allow read, delete: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null && request.auth.uid == uid
+        && request.resource.data.size() <= 20
+        && request.resource.data.keys().hasOnly(['kind', 'label', 'who', 'amount', 'cost', 'price', 'done', 'created', 'start'])
+        && request.resource.data.kind in ['in', 'res', 'buy', 'settings'];
+    }
+    // Everything else is closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
