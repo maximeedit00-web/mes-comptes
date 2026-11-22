@@ -617,28 +617,28 @@ button:focus-visible, .check input:focus-visible { outline: 2px solid var(--acce
     setStatus(false, "Synchronisation…");
     unsub = fsM.onSnapshot(col, { includeMetadataChanges: true }, async snap => {
       if (first) {
-        if (snap.metadata.fromCache) return; // wait for the server's answer before deciding anything
+        // An empty answer from the local cache proves nothing: wait for the server.
+        if (snap.metadata.fromCache && snap.empty) return;
         first = false;
+        backend = cloud;
         if (snap.empty && entries.size) {
           // First sign-in on this account: send what this device already has.
-          backend = cloud;
           try { await cloud.replaceAll(); } catch (e) { handleWriteError(e); }
           setStatus(true, "Synchronisé. Tes lignes de cet appareil sont maintenant en ligne.");
           return;
         }
-        entries.clear();
-        backend = cloud;
       }
-      for (const ch of snap.docChanges()) {
-        const id = ch.doc.id;
-        if (id === "_settings") {
-          if (ch.type !== "removed") settings = { start: ch.doc.data().start || 0 };
-          continue;
-        }
-        if (ch.type === "removed") { entries.delete(id); continue; }
-        if (pending[id] && entries.has(id)) continue; // keep edits still being typed
-        entries.set(id, { ...ch.doc.data() });
-      }
+      // Rebuild the whole list from the snapshot (never from docChanges alone:
+      // a snapshot that only confirms the cache carries no changes).
+      const next = new Map();
+      snap.docs.forEach(d => {
+        if (d.id === "_settings") { settings = { start: d.data().start || 0 }; return; }
+        next.set(d.id, pending[d.id] && entries.has(d.id) ? entries.get(d.id) : { ...d.data() });
+      });
+      // Keep rows created here that the snapshot has not caught up with yet.
+      entries.forEach((e, id) => { if (pending[id] && !next.has(id)) next.set(id, e); });
+      entries.clear();
+      next.forEach((e, id) => entries.set(id, e));
       lsSave();
       renderAll();
       setStatus(true, snap.metadata.hasPendingWrites
