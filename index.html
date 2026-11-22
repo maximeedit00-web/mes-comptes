@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mes comptes</title>
+<meta name="description" content="Suivi perso : argent qui rentre, achats-revente, cadeaux à acheter, solde actuel et prévu.">
+<meta name="theme-color" content="#f3f5f2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#121714" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Comptes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Inter:wght@400;500;600&display=swap">
+<style>
+/* Layout: balance band on top, then three ledgers (entrées, achat-revente, à acheter) as editable rows */
+:root {
+  --bg: #f3f5f2;
+  --surface: #ffffff;
+  --line: #dde3dc;
+  --fg: #1b2420;
+  --muted: #5f6d66;
+  --accent: #1f6b52;
+  --accent-soft: #e2efe9;
+  --pos: #1c7a4c;
+  --neg: #b23a2e;
+  --warn: #9a6a12;
+  --chip: #eef1ed;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Inter", "Segoe UI", system-ui, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121714; --surface: #1a211d; --line: #2c3530; --fg: #e6ece8; --muted: #94a39b;
+    --accent: #5fc39b; --accent-soft: #1f3129; --pos: #5fd193; --neg: #ff8a7a; --warn: #e3b25a; --chip: #222a25;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121714; --surface: #1a211d; --line: #2c3530; --fg: #e6ece8; --muted: #94a39b;
+  --accent: #5fc39b; --accent-soft: #1f3129; --pos: #5fd193; --neg: #ff8a7a; --warn: #e3b25a; --chip: #222a25;
+  color-scheme: dark;
+}
+:root { color-scheme: light; }
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  -webkit-tap-highlight-color: transparent;
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.45;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: calc(24px + env(safe-area-inset-top, 0px));
+  padding-bottom: calc(64px + env(safe-area-inset-bottom, 0px));
+  font-variant-numeric: tabular-nums;
+}
+.wrap { max-width: 920px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+h1, h2 { font-family: var(--font-display); text-wrap: balance; margin: 0; }
+h1 { font-size: 1.15rem; font-weight: 500; color: var(--muted); letter-spacing: .01em; }
+h2 { font-size: 1.3rem; font-weight: 700; }
+
+/* Balance band */
+.balance { display: grid; grid-template-columns: 1.3fr 1fr; gap: 16px; }
+.big {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 20px 22px;
+  display: flex; flex-direction: column; gap: 6px; min-width: 0;
+}
+.big .label { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.big .amount { font-family: var(--font-display); font-weight: 700; font-size: clamp(2.2rem, 7vw, 3.4rem); line-height: 1.05; }
+.big.secondary .amount { font-size: clamp(1.6rem, 5vw, 2.2rem); }
+.amount.pos { color: var(--pos); } .amount.neg { color: var(--neg); }
+.pill { align-self: flex-start; font-size: .8rem; font-weight: 600; padding: 3px 10px; border-radius: 999px; }
+.pill.pos { background: color-mix(in srgb, var(--pos) 15%, transparent); color: var(--pos); }
+.pill.neg { background: color-mix(in srgb, var(--neg) 15%, transparent); color: var(--neg); }
+.hint { font-size: .85rem; color: var(--muted); }
+.start { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: .9rem; color: var(--muted); margin-top: 6px; }
+.start input { width: 110px; }
+
+.breakdown { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { background: var(--chip); border-radius: 8px; padding: 6px 10px; font-size: .85rem; display: flex; gap: 6px; }
+.chip b { font-weight: 600; }
+.chip .p { color: var(--pos); } .chip .n { color: var(--neg); }
+
+/* Ledgers */
+section.ledger { display: flex; flex-direction: column; gap: 10px; }
+.ledger-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.ledger-head .sum { font-size: .9rem; color: var(--muted); }
+.ledger-head .sum b { color: var(--fg); }
+.sheet { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.row { display: grid; gap: 8px; align-items: center; padding: 8px 10px; border-top: 1px solid var(--line); }
+.row:first-child { border-top: 0; }
+.row.colhead { font-size: .72rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; padding-block: 8px 6px; background: var(--chip); }
+.row.done { background: color-mix(in srgb, var(--accent-soft) 55%, transparent); }
+.k-in   { grid-template-columns: minmax(0, 1fr) 120px 92px 34px; }
+.k-res  { grid-template-columns: minmax(0, 1fr) 100px 100px 82px 90px 34px; }
+.k-buy  { grid-template-columns: minmax(0, 1fr) minmax(0, .6fr) 100px 92px 34px; }
+input[type=text] {
+  width: 100%; min-width: 0; font: inherit; color: var(--fg); background: transparent;
+  border: 1px solid transparent; border-radius: 7px; padding: 6px 8px;
+}
+input[type=text]:hover { border-color: var(--line); }
+input[type=text]:focus { outline: none; border-color: var(--accent); background: var(--bg); }
+input.num { text-align: right; }
+.check { display: flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--muted); cursor: pointer; user-select: none; }
+.check input { width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; margin: 0; }
+.margin { text-align: right; font-weight: 600; font-size: .9rem; padding-right: 4px; }
+.margin.pos { color: var(--pos); } .margin.neg { color: var(--neg); }
+button { font: inherit; cursor: pointer; }
+.del {
+  border: 0; background: transparent; color: var(--muted); border-radius: 7px; height: 30px; padding: 0 6px;
+  font-size: 1.1rem; line-height: 1; white-space: nowrap;
+}
+.del:hover { background: var(--chip); color: var(--neg); }
+.del.armed { background: var(--neg); color: #fff; font-size: .75rem; font-weight: 600; }
+.add {
+  align-self: flex-start; border: 1px dashed var(--accent); color: var(--accent); background: transparent;
+  border-radius: 9px; padding: 8px 14px; font-weight: 600;
+}
+.add:hover { background: var(--accent-soft); }
+button:focus-visible, .check input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.empty { padding: 16px 14px; color: var(--muted); font-size: .9rem; }
+.status { font-size: .82rem; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warn); display: inline-block; }
+.status .dot.ok { background: var(--pos); }
+.example { border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 9px; padding: 8px 14px; }
+.example:hover { border-color: var(--accent); }
+.mlabel { display: none; }
+
+@media (max-width: 640px) {
+  .balance { grid-template-columns: 1fr; }
+  .row.colhead { display: none; }
+  .k-in, .k-res, .k-buy { grid-template-columns: 1fr 1fr; }
+  .row .f-label { grid-column: 1 / -1; }
+  .row .f-label input { font-weight: 600; }
+  .row .del { justify-self: end; }
+  .mlabel { display: block; font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); padding-left: 8px; }
+  .k-buy .f-who { grid-column: 1 / -1; }
+  .margin { text-align: left; padding-left: 8px; }
+  input[type=text] { font-size: 16px; padding: 8px; }
+  input.num { text-align: left; }
+  .row { padding: 12px 10px; position: relative; row-gap: 4px; }
+  .row .f-label { padding-right: 40px; }
+  .row > .del { position: absolute; top: 8px; right: 8px; }
+  .add { width: 100%; padding: 12px 14px; }
+  .del { height: 38px; min-width: 38px; }
+}
+.backup { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: .85rem; color: var(--muted); border-top: 1px solid var(--line); padding-top: 18px; }
+.backup button, .backup label.btn { border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 9px; padding: 8px 14px; font-size: .9rem; cursor: pointer; }
+.backup button:hover, .backup label.btn:hover { border-color: var(--accent); }
+.backup input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  .amount { transition: color .2s; }
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header style="display:flex;flex-direction:column;gap:14px">
+    <h1>Mes comptes</h1>
+    <div class="balance">
+      <div class="big">
+        <span class="label">Solde actuel</span>
+        <span class="amount" id="cur">0,00 €</span>
+        <span class="pill" id="curPill">—</span>
+        <span class="hint">Argent reçu, moins ce que tu as déjà payé, plus ce que tu as déjà revendu.</span>
+        <label class="start" for="startInput">Argent de départ :
+          <input type="text" class="num" id="startInput" inputmode="decimal" placeholder="0">
+        </label>
+      </div>
+      <div class="big secondary">
+        <span class="label">Solde prévu</span>
+        <span class="amount" id="proj">0,00 €</span>
+        <span class="pill" id="projPill">—</span>
+        <span class="hint">Si tout l'argent attendu arrive, si tu revends tout au prix prévu et si tu achètes tous tes cadeaux.</span>
+      </div>
+    </div>
+    <div class="breakdown" id="breakdown"></div>
+    <div class="status" id="status"><span class="dot"></span><span id="statusText">Chargement…</span></div>
+  </header>
+
+  <section class="ledger" id="sec-in">
+    <div class="ledger-head"><h2>Argent qui rentre</h2><span class="sum" id="sum-in"></span></div>
+    <div class="sheet" id="list-in"></div>
+    <button class="add" id="add-in">+ Ajouter une entrée</button>
+  </section>
+
+  <section class="ledger" id="sec-res">
+    <div class="ledger-head"><h2>Achats pour revendre</h2><span class="sum" id="sum-res"></span></div>
+    <div class="sheet" id="list-res"></div>
+    <button class="add" id="add-res">+ Ajouter un article</button>
+  </section>
+
+  <section class="ledger" id="sec-buy">
+    <div class="ledger-head"><h2>À acheter (cadeaux, Noël…)</h2><span class="sum" id="sum-buy"></span></div>
+    <div class="sheet" id="list-buy"></div>
+    <button class="add" id="add-buy">+ Ajouter un achat prévu</button>
+  </section>
+
+  <div id="exampleBox" hidden>
+    <button class="example" id="exampleBtn">Remplir avec des exemples pour voir comment ça marche</button>
+  </div>
+
+  <footer class="backup">
+    <span>Tes données restent sur cet appareil.</span>
+    <button id="exportBtn" type="button">Sauvegarder (fichier)</button>
+    <label class="btn" for="importFile">Restaurer une sauvegarde</label>
+    <input type="file" id="importFile" accept="application/json,.json">
+    <span id="backupMsg" role="status"></span>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const eur = new Intl.NumberFormat("fr-FR", { style: "currency", currency: "EUR" });
+  const fmt = n => eur.format(n || 0);
+  const signed = n => (n > 0 ? "+" : n < 0 ? "−" : "") + eur.format(Math.abs(n || 0));
+  const parse = s => {
+    if (s == null) return 0;
+    const v = parseFloat(String(s).replace(/\s|€/g, "").replace(",", "."));
+    return isFinite(v) ? Math.round(v * 100) / 100 : 0;
+  };
+  const numText = n => (n ? String(n).replace(".", ",") : "");
+  const $ = id => document.getElementById(id);
+
+  // ---------- State ----------
+  const entries = new Map();   // id -> {kind, ...}
+  let settings = { start: 0 };
+  let backend = null;          // {write(id,data), remove(id), writeSettings(data)}
+  let loaded = false;
+
+  // ---------- Local fallback ----------
+  const LS_KEY = "mes-comptes-v1";
+  function lsLoad() {
+    try { const raw = localStorage.getItem(LS_KEY); return raw ? JSON.parse(raw) : null; } catch { return null; }
+  }
+  function lsSave() {
+    try {
+      localStorage.setItem(LS_KEY, JSON.stringify({ entries: Object.fromEntries(entries), settings }));
+    } catch {}
+  }
+  function useLocal(reason) {
+    const saved = lsLoad();
+    if (saved) {
+      Object.entries(saved.entries || {}).forEach(([id, d]) => entries.set(id, d));
+      settings = saved.settings || { start: 0 };
+    }
+    backend = { write: lsSave, remove: lsSave, writeSettings: lsSave, local: true };
+    loaded = true;
+    setStatus(false, reason);
+    renderAll();
+  }
+
+  // ---------- Write queue (one write at a time per doc, debounced) ----------
+  const timers = {}, busy = {}, again = {}, pending = {};
+  function queueWrite(id, delay = 600) {
+    pending[id] = true;
+    clearTimeout(timers[id]);
+    timers[id] = setTimeout(() => flush(id), delay);
+  }
+  async function flush(id) {
+    if (!backend) return;
+    if (busy[id]) { again[id] = true; return; }
+    busy[id] = true;
+    try {
+      if (id === "_settings") await backend.writeSettings({ ...settings, kind: "settings" });
+      else if (entries.has(id)) await backend.write(id, { ...entries.get(id) });
+    } catch (e) { handleWriteError(e); }
+    busy[id] = false;
+    if (again[id]) { again[id] = false; flush(id); }
+    else setTimeout(() => { if (!busy[id]) delete pending[id]; }, 1500);
+  }
+  function handleWriteError(e) {
+    const code = e && e.code;
+    if (code === "quota_exceeded") setStatus(false, "Plus de place pour enregistrer. Supprime des lignes anciennes.");
+    else setStatus(false, "Dernière modification pas enregistrée. Réessaie dans un instant.");
+  }
+
+  // ---------- Totals ----------
+  function totals() {
+    const t = { inRecv: 0, inPend: 0, resCost: 0, resSold: 0, resPend: 0, buyDone: 0, buyPend: 0 };
+    for (const e of entries.values()) {
+      if (e.kind === "in") e.done ? (t.inRecv += e.amount || 0) : (t.inPend += e.amount || 0);
+      else if (e.kind === "res") {
+        t.resCost += e.cost || 0;
+        e.done ? (t.resSold += e.price || 0) : (t.resPend += e.price || 0);
+      } else if (e.kind === "buy") e.done ? (t.buyDone += e.amount || 0) : (t.buyPend += e.amount || 0);
+    }
+    t.current = (settings.start || 0) + t.inRecv - t.resCost + t.resSold - t.buyDone;
+    t.projected = t.current + t.inPend + t.resPend - t.buyPend;
+    return t;
+  }
+  function paintAmount(el, pill, v) {
+    el.textContent = fmt(v);
+    el.className = "amount " + (v < 0 ? "neg" : v > 0 ? "pos" : "");
+    pill.className = "pill " + (v < 0 ? "neg" : "pos");
+    pill.textContent = v < 0 ? "En négatif" : v > 0 ? "En positif" : "À zéro";
+  }
+  function renderTotals() {
+    const t = totals();
+    paintAmount($("cur"), $("curPill"), t.current);
+    paintAmount($("proj"), $("projPill"), t.projected);
+    const chip = (label, v, cls) => `<span class="chip">${label} <b class="${cls}">${v}</b></span>`;
+    $("breakdown").innerHTML =
+      chip("Reçu", signed(t.inRecv), "p") +
+      chip("Encore attendu", signed(t.inPend), "p") +
+      chip("Payé pour revendre", signed(-t.resCost), "n") +
+      chip("Déjà revendu", signed(t.resSold), "p") +
+      chip("Cadeaux achetés", signed(-t.buyDone), "n") +
+      chip("Cadeaux à acheter", signed(-t.buyPend), "n");
+    $("sum-in").innerHTML = `Reçu <b>${fmt(t.inRecv)}</b> · attendu <b>${fmt(t.inPend)}</b>`;
+    const resMargin = t.resSold + t.resPend - t.resCost;
+    $("sum-res").innerHTML = `Bénéfice prévu <b>${signed(resMargin)}</b>`;
+    $("sum-buy").innerHTML = `Reste à payer <b>${fmt(t.buyPend)}</b> · déjà payé <b>${fmt(t.buyDone)}</b>`;
+    const startEl = $("startInput");
+    if (document.activeElement !== startEl) startEl.value = numText(settings.start);
+    const any = entries.size > 0;
+    $("exampleBox").hidden = !loaded || any;
+  }
+
+  // ---------- Rows ----------
+  const KINDS = {
+    in: {
+      list: "list-in", cls: "k-in", empty: "Rien pour l'instant. Ajoute ton salaire, l'argent de poche, une vente…",
+      head: ["Description", "Montant", "Statut", ""],
+      fields: [
+        { key: "label", type: "text", cls: "f-label", ph: "Ex. salaire, argent de poche", m: "Description" },
+        { key: "amount", type: "num", ph: "0,00", m: "Montant" },
+        { key: "done", type: "check", text: "Reçu" },
+      ],
+    },
+    res: {
+      list: "list-res", cls: "k-res", empty: "Aucun article. Ajoute ce que tu achètes pour le revendre.",
+      head: ["Article", "Payé", "Revente", "Statut", "Bénéfice", ""],
+      fields: [
+        { key: "label", type: "text", cls: "f-label", ph: "Ex. paire de sneakers", m: "Article" },
+        { key: "cost", type: "num", ph: "0,00", m: "Payé" },
+        { key: "price", type: "num", ph: "0,00", m: "Revente" },
+        { key: "done", type: "check", text: "Vendu" },
+        { key: "_margin", type: "margin", m: "Bénéfice" },
+      ],
+    },
+    buy: {
+      list: "list-buy", cls: "k-buy", empty: "Rien à acheter. Ajoute tes cadeaux de Noël ou tes achats prévus.",
+      head: ["Article", "Pour qui", "Prix", "Statut", ""],
+      fields: [
+        { key: "label", type: "text", cls: "f-label", ph: "Ex. parfum", m: "Article" },
+        { key: "who", type: "text", cls: "f-who", ph: "Ex. Maman", m: "Pour qui" },
+        { key: "amount", type: "num", ph: "0,00", m: "Prix" },
+        { key: "done", type: "check", text: "Acheté" },
+      ],
+    },
+  };
+
+  function buildRow(id, kind) {
+    const K = KINDS[kind];
+    const row = document.createElement("div");
+    row.className = "row " + K.cls;
+    row.dataset.id = id;
+    K.fields.forEach(f => {
+      const cell = document.createElement("div");
+      if (f.cls) cell.className = f.cls;
+      if (f.m && f.type !== "check") {
+        const ml = document.createElement("span"); ml.className = "mlabel"; ml.textContent = f.m; cell.appendChild(ml);
+      }
+      if (f.type === "text" || f.type === "num") {
+        const inp = document.createElement("input");
+        inp.type = "text"; inp.id = `${kind}-${f.key}-${id}`; inp.dataset.key = f.key;
+        inp.placeholder = f.ph; inp.setAttribute("aria-label", f.m);
+        if (f.type === "num") { inp.inputMode = "decimal"; inp.className = "num"; }
+        inp.addEventListener("input", () => {
+          const e = entries.get(id); if (!e) return;
+          e[f.key] = f.type === "num" ? parse(inp.value) : inp.value;
+          updateRow(row, e); renderTotals(); queueWrite(id);
+        });
+        if (f.type === "num") inp.addEventListener("blur", () => { const e = entries.get(id); if (e) inp.value = numText(e[f.key]); });
+        cell.appendChild(inp);
+      } else if (f.type === "check") {
+        const lab = document.createElement("label"); lab.className = "check";
+        const cb = document.createElement("input"); cb.type = "checkbox"; cb.id = `${kind}-done-${id}`; cb.dataset.key = "done";
+        cb.addEventListener("change", () => {
+          const e = entries.get(id); if (!e) return;
+          e.done = cb.checked; updateRow(row, e); renderTotals(); queueWrite(id, 0);
+        });
+        lab.append(cb, document.createTextNode(f.text));
+        cell.appendChild(lab);
+      } else if (f.type === "margin") {
+        const m = document.createElement("div"); m.className = "margin"; m.dataset.margin = "1";
+        cell.appendChild(m);
+      }
+      row.appendChild(cell);
+    });
+    const del = document.createElement("button");
+    del.className = "del"; del.textContent = "×"; del.setAttribute("aria-label", "Supprimer la ligne");
+    let armT;
+    del.addEventListener("click", async () => {
+      if (!del.classList.contains("armed")) {
+        del.classList.add("armed"); del.textContent = "Suppr. ?";
+        armT = setTimeout(() => { del.classList.remove("armed"); del.textContent = "×"; }, 3000);
+        return;
+      }
+      clearTimeout(armT); clearTimeout(timers[id]);
+      entries.delete(id); row.remove(); renderList(kind); renderTotals();
+      try { await backend.remove(id); } catch (e) { handleWriteError(e); }
+    });
+    row.appendChild(del);
+    return row;
+  }
+
+  function updateRow(row, e) {
+    row.querySelectorAll("input[data-key]").forEach(inp => {
+      if (document.activeElement === inp) return;
+      const k = inp.dataset.key;
+      if (inp.type === "checkbox") inp.checked = !!e.done;
+      else if (inp.classList.contains("num")) inp.value = numText(e[k]);
+      else inp.value = e[k] || "";
+    });
+    row.classList.toggle("done", !!e.done);
+    const m = row.querySelector("[data-margin]");
+    if (m) {
+      const v = (e.price || 0) - (e.cost || 0);
+      m.textContent = signed(v);
+      m.className = "margin " + (v < 0 ? "neg" : v > 0 ? "pos" : "");
+    }
+  }
+
+  function renderList(kind) {
+    const K = KINDS[kind];
+    const box = $(K.list);
+    const items = [...entries.entries()].filter(([, e]) => e.kind === kind)
+      .sort((a, b) => (a[1].created || 0) - (b[1].created || 0));
+    // header
+    let head = box.querySelector(".colhead");
+    if (!head) {
+      head = document.createElement("div"); head.className = "row colhead " + K.cls;
+      head.innerHTML = K.head.map(h => `<div>${h}</div>`).join("");
+      box.prepend(head);
+    }
+    let emptyEl = box.querySelector(".empty");
+    if (!items.length) {
+      head.hidden = true;
+      if (!emptyEl) { emptyEl = document.createElement("div"); emptyEl.className = "empty"; emptyEl.textContent = K.empty; box.appendChild(emptyEl); }
+    } else {
+      head.hidden = false;
+      if (emptyEl) emptyEl.remove();
+    }
+    const existing = new Map([...box.querySelectorAll(".row[data-id]")].map(r => [r.dataset.id, r]));
+    for (const [id, r] of existing) if (!entries.has(id) || entries.get(id).kind !== kind) r.remove();
+    items.forEach(([id, e]) => {
+      let r = existing.get(id);
+      if (!r || !r.isConnected) r = buildRow(id, kind);
+      box.appendChild(r);           // keeps order
+      updateRow(r, e);
+    });
+  }
+
+  function renderAll() { Object.keys(KINDS).forEach(renderList); renderTotals(); }
+
+  function newId() { return "e" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+  function addEntry(kind, data = {}, focus = true) {
+    const id = newId();
+    const base = { kind, label: "", done: false, created: Date.now() };
+    if (kind === "in" || kind === "buy") base.amount = 0;
+    if (kind === "buy") base.who = "";
+    if (kind === "res") { base.cost = 0; base.price = 0; }
+    entries.set(id, { ...base, ...data });
+    renderList(kind); renderTotals();
+    queueWrite(id, 0);
+    if (focus) { const inp = $(`${kind}-label-${id}`); if (inp) inp.focus(); }
+    return id;
+  }
+  $("add-in").addEventListener("click", () => addEntry("in"));
+  $("add-res").addEventListener("click", () => addEntry("res"));
+  $("add-buy").addEventListener("click", () => addEntry("buy"));
+
+  $("startInput").addEventListener("input", e => {
+    settings.start = parse(e.target.value); renderTotals(); queueWrite("_settings");
+  });
+  $("startInput").addEventListener("blur", e => { e.target.value = numText(settings.start); });
+
+  $("exampleBtn").addEventListener("click", () => {
+    let t = Date.now();
+    const ex = [
+      ["in", { label: "Exemple : salaire job étudiant", amount: 450, done: true }],
+      ["in", { label: "Exemple : argent de Noël de mamie", amount: 50, done: false }],
+      ["res", { label: "Exemple : sneakers achetées en solde", cost: 60, price: 110, done: false }],
+      ["res", { label: "Exemple : console d'occasion", cost: 120, price: 170, done: true }],
+      ["buy", { label: "Exemple : parfum", who: "Maman", amount: 45, done: false }],
+      ["buy", { label: "Exemple : jeu vidéo", who: "Petit frère", amount: 35, done: true }],
+    ];
+    ex.forEach(([k, d]) => addEntry(k, { ...d, created: t++ }, false));
+  });
+
+  // ---------- Status ----------
+  function setStatus(ok, text) {
+    $("status").querySelector(".dot").className = "dot" + (ok ? " ok" : "");
+    $("statusText").textContent = text;
+  }
+
+  // ---------- Backup: export / import a JSON file ----------
+  const backupMsg = t => { $("backupMsg").textContent = t; };
+  $("exportBtn").addEventListener("click", () => {
+    const data = JSON.stringify({ app: "mes-comptes", version: 1, savedAt: new Date().toISOString(),
+      entries: Object.fromEntries(entries), settings }, null, 2);
+    const blob = new Blob([data], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "mes-comptes-" + new Date().toISOString().slice(0, 10) + ".json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    backupMsg("Fichier de sauvegarde créé.");
+  });
+  $("importFile").addEventListener("change", async e => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const saved = JSON.parse(await file.text());
+      if (!saved || typeof saved.entries !== "object") throw new Error("format");
+      entries.clear();
+      Object.entries(saved.entries).forEach(([id, d]) => { if (d && d.kind) entries.set(id, d); });
+      settings = saved.settings || { start: 0 };
+      lsSave(); renderAll();
+      backupMsg("Sauvegarde restaurée : " + entries.size + " lignes.");
+    } catch {
+      backupMsg("Ce fichier n'est pas une sauvegarde de Mes comptes.");
+    }
+  });
+
+  // ---------- Boot: data stays on this device ----------
+  let storageOk = true;
+  try { localStorage.setItem("__t", "1"); localStorage.removeItem("__t"); } catch { storageOk = false; }
+  useLocal(storageOk
+    ? "Enregistré automatiquement sur cet appareil."
+    : "Ce navigateur bloque l'enregistrement (navigation privée ?). Tes données seront perdues en fermant.");
+  if (storageOk) setStatus(true, $("statusText").textContent);
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+  if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
